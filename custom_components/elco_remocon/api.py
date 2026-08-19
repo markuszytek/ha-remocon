@@ -162,11 +162,12 @@ class RemoconClient:
             raise RemoconDataError("Could not parse API response") from err
 
     def _get_raw(self) -> dict:
-        path = f"/R2/PlantHomeBsb/GetData/{self._gateway_id}"
+        path = f"/R2/PlantHome/GetData/{self._gateway_id}?umsys=si"
         payload = {
             "useCache": True,
             "zone": int(self._zone),
-            "filter": {"progIds": None, "plant": True, "zone": True},
+            "filter": {"notEssentials": False, "plant": True, "zone": True, "dhw": True},
+            "features": FEATURES_PAYLOAD,
         }
         data = self._request("POST", path, json=payload)
         if not data:
