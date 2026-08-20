@@ -19,6 +19,7 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 BASE_URL = "https://www.remocon-net.remotethermo.com"
+REQUEST_TIMEOUT = 30
 
 FEATURES_PAYLOAD = {
     "gatewayId": "",
@@ -167,19 +168,35 @@ class RemoconClient:
     def _request(self, method: str, path: str, **kwargs: Any) -> Any:
         s = self._get_session()
         url = f"{BASE_URL}{path}"
-        kwargs.setdefault("timeout", 15)
-        try:
-            resp = s.request(method, url, **kwargs)
-            if resp.status_code in (401, 403):
-                raise RemoconAuthError("Session expired")
-            resp.raise_for_status()
-        except requests.RequestException as err:
-            err_msg = str(err)
-            response = err.response
-            if response is not None:
-                err_msg += f" - Response: {response.text}"
-            _LOGGER.error("API Request failed: %s", err_msg)
-            raise RemoconConnectionError(err_msg) from err
+        kwargs.setdefault("timeout", REQUEST_TIMEOUT)
+        retry_read = method.upper() == "GET" or path.startswith(
+            ("/R2/PlantHome/GetData/", "/R2/PlantAdvancedSettings/Refresh/")
+        )
+        for attempt in range(2 if retry_read else 1):
+            try:
+                resp = s.request(method, url, **kwargs)
+                if resp.status_code in (401, 403):
+                    raise RemoconAuthError("Session expired")
+                resp.raise_for_status()
+                break
+            except requests.exceptions.ReadTimeout as err:
+                if attempt == 0 and retry_read:
+                    _LOGGER.warning(
+                        "API read timed out after %ss, retrying: %s",
+                        REQUEST_TIMEOUT,
+                        path,
+                    )
+                    continue
+                err_msg = str(err)
+                _LOGGER.error("API Request failed: %s", err_msg)
+                raise RemoconConnectionError(err_msg) from err
+            except requests.RequestException as err:
+                err_msg = str(err)
+                response = err.response
+                if response is not None:
+                    err_msg += f" - Response: {response.text}"
+                _LOGGER.error("API Request failed: %s", err_msg)
+                raise RemoconConnectionError(err_msg) from err
         
         try:
             return resp.json()
