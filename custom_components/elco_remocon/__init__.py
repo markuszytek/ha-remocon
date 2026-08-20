@@ -10,9 +10,11 @@ from .const import DOMAIN
 from .coordinator import ElcoRemoconCoordinator
 
 PLATFORMS: list[Platform] = [
-    Platform.CLIMATE,
+    Platform.NUMBER,
+    Platform.SELECT,
     Platform.SENSOR,
     Platform.BINARY_SENSOR,
+    Platform.SWITCH,
 ]
 
 

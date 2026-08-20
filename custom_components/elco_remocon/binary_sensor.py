@@ -33,9 +33,9 @@ class ElcoBinarySensorDescription(BinarySensorEntityDescription):
 
 BINARY_SENSORS: tuple[ElcoBinarySensorDescription, ...] = (
     ElcoBinarySensorDescription(
-        key="dhw_enabled",
-        translation_key="dhw_enabled",
-        value_fn=lambda d: d.dhw_enabled,
+        key="error",
+        translation_key="error",
+        value_fn=lambda d: d.error_present,
     ),
     ElcoBinarySensorDescription(
         key="holiday",
@@ -43,20 +43,9 @@ BINARY_SENSORS: tuple[ElcoBinarySensorDescription, ...] = (
         value_fn=lambda d: d.holiday,
     ),
     ElcoBinarySensorDescription(
-        key="gateway_online",
-        translation_key="gateway_online",
-        device_class=BinarySensorDeviceClass.CONNECTIVITY,
-        value_fn=lambda d: d.gateway_online,
-    ),
-    ElcoBinarySensorDescription(
         key="quiet_mode_active",
         translation_key="quiet_mode_active",
         value_fn=lambda d: d.quiet_mode_active,
-    ),
-    ElcoBinarySensorDescription(
-        key="automatic_thermoregulation",
-        translation_key="automatic_thermoregulation",
-        value_fn=lambda d: d.automatic_thermoregulation,
     ),
 )
 

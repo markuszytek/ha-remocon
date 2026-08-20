@@ -45,8 +45,9 @@ class ElcoRemoconCoordinator(DataUpdateCoordinator[RemoconData]):
         """Return shared Home Assistant device metadata."""
         model = self.data.appliance_model if self.data else None
         gateway_id = self.config_entry.data[CONF_GATEWAY_ID]
+        zone = self.config_entry.data.get(CONF_ZONE, "1")
         return {
-            "identifiers": {(DOMAIN, gateway_id)},
+            "identifiers": {(DOMAIN, f"{gateway_id}_{zone}")},
             "name": model or "Remocon-Net Heat Pump",
             "manufacturer": "Elco",
             "model": model or "Unknown",
@@ -55,7 +56,9 @@ class ElcoRemoconCoordinator(DataUpdateCoordinator[RemoconData]):
     async def _async_update_data(self) -> RemoconData:
         """Fetch data from the Remocon-Net cloud API."""
         try:
-            return await self.hass.async_add_executor_job(self.client.get_data)
+            return await self.hass.async_add_executor_job(
+                self.client.get_data, False
+            )
         except RemoconAuthError as err:
             raise ConfigEntryAuthFailed("Authentication failed") from err
         except RemoconConnectionError as err:

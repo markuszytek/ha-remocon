@@ -34,12 +34,21 @@ class ElcoSensorDescription(SensorEntityDescription):
     state_class: SensorStateClass | None = None
     native_unit_of_measurement: str | None = None
     entity_category: EntityCategory | None = None
-    suggested_display_precision: int = 1
+    suggested_display_precision: int | None = 1
     value_fn: Callable[[RemoconData], StateType]
     exists_fn: Callable[[RemoconData], bool] = lambda _: True
 
 
 SENSORS: tuple[ElcoSensorDescription, ...] = (
+    ElcoSensorDescription(
+        key="room_temperature",
+        translation_key="room_temperature",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        value_fn=lambda d: d.room_temp if d.has_room_sensor else None,
+        exists_fn=lambda d: d.has_room_sensor,
+    ),
     ElcoSensorDescription(
         key="outside_temp",
         translation_key="outside_temperature",
@@ -49,44 +58,12 @@ SENSORS: tuple[ElcoSensorDescription, ...] = (
         value_fn=lambda d: d.outside_temp,
     ),
     ElcoSensorDescription(
-        key="desired_temp",
-        translation_key="desired_temperature",
+        key="zone_desired_temperature",
+        translation_key="zone_desired_temperature",
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         value_fn=lambda d: d.desired_temp if d.desired_temp > 0 else None,
-    ),
-    ElcoSensorDescription(
-        key="comfort_temp",
-        translation_key="comfort_temperature",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        value_fn=lambda d: d.comfort_temp if d.comfort_temp > 0 else None,
-    ),
-    ElcoSensorDescription(
-        key="reduced_temp",
-        translation_key="reduced_temperature",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        value_fn=lambda d: d.reduced_temp if d.reduced_temp > 0 else None,
-    ),
-    ElcoSensorDescription(
-        key="cooling_comfort_temp",
-        translation_key="cooling_comfort_temperature",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        value_fn=lambda d: d.cooling_comfort_temp if d.cooling_comfort_temp > 0 else None,
-    ),
-    ElcoSensorDescription(
-        key="cooling_reduced_temp",
-        translation_key="cooling_reduced_temperature",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        value_fn=lambda d: d.cooling_reduced_temp if d.cooling_reduced_temp > 0 else None,
     ),
     ElcoSensorDescription(
         key="system_pressure",
@@ -100,21 +77,12 @@ SENSORS: tuple[ElcoSensorDescription, ...] = (
         exists_fn=lambda d: d.system_pressure is not None,
     ),
     ElcoSensorDescription(
-        key="dhw_temp",
-        translation_key="dhw_temperature",
+        key="dhw_storage_temperature",
+        translation_key="dhw_storage_temperature",
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         value_fn=lambda d: d.dhw_temp if d.dhw_temp > 0 else None,
-        exists_fn=lambda d: d.dhw_enabled,
-    ),
-    ElcoSensorDescription(
-        key="dhw_target_temp",
-        translation_key="dhw_target_temperature",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        value_fn=lambda d: d.dhw_target_temp if d.dhw_enabled else None,
         exists_fn=lambda d: d.dhw_enabled,
     ),
     ElcoSensorDescription(
@@ -127,42 +95,18 @@ SENSORS: tuple[ElcoSensorDescription, ...] = (
         exists_fn=lambda d: d.flow_setpoint_temperature is not None,
     ),
     ElcoSensorDescription(
-        key="dhw_comfort_temp",
-        translation_key="dhw_comfort_temperature",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        value_fn=lambda d: d.dhw_comfort_temp if d.dhw_enabled else None,
-        exists_fn=lambda d: d.dhw_enabled,
-    ),
-    ElcoSensorDescription(
-        key="dhw_reduced_temp",
-        translation_key="dhw_reduced_temperature",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        value_fn=lambda d: d.dhw_reduced_temp if d.dhw_enabled else None,
-        exists_fn=lambda d: d.dhw_enabled,
-    ),
-    ElcoSensorDescription(
-        key="zone_deroga",
-        translation_key="zone_deroga",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        key="error_text",
+        translation_key="error_text",
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda d: d.zone_deroga,
-    ),
-    ElcoSensorDescription(
-        key="plant_mode",
-        translation_key="plant_mode",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda d: d.plant_mode_text,
+        suggested_display_precision=None,
+        value_fn=lambda d: d.error_text,
+        exists_fn=lambda d: d.error_text is not None,
     ),
     ElcoSensorDescription(
         key="quiet_mode_start",
         translation_key="quiet_mode_start",
         entity_category=EntityCategory.DIAGNOSTIC,
+        suggested_display_precision=None,
         value_fn=lambda d: d.quiet_mode_start,
         exists_fn=lambda d: d.quiet_mode_start is not None,
     ),
@@ -170,6 +114,7 @@ SENSORS: tuple[ElcoSensorDescription, ...] = (
         key="quiet_mode_end",
         translation_key="quiet_mode_end",
         entity_category=EntityCategory.DIAGNOSTIC,
+        suggested_display_precision=None,
         value_fn=lambda d: d.quiet_mode_end,
         exists_fn=lambda d: d.quiet_mode_end is not None,
     ),

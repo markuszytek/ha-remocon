@@ -1,11 +1,13 @@
 """Constants for the Elco Remocon-Net integration."""
 
+import os
+
 DOMAIN = "elco_remocon"
 CONF_GATEWAY_ID = "gateway_id"
 CONF_ZONE = "zone"
 
 DEFAULT_ZONE = "1"
-DEFAULT_SCAN_INTERVAL = 120
+DEFAULT_SCAN_INTERVAL = int(os.getenv("ELCO_REMOCON_SCAN_INTERVAL", "120"))
 
 # API mode values
 MODE_PROTECTION = 0
