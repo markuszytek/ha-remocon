@@ -230,10 +230,10 @@ class RemoconClient:
         path = f"/R2/PlantMenu/Submit/{self._gateway_id}?userActivity=SaveOtherSettings"
         self._request("POST", path, headers=AJAX_HEADERS, json=items)
 
-    def _get_raw(self) -> dict:
+    def _get_raw(self, use_cache: bool = True) -> dict:
         path = f"/R2/PlantHome/GetData/{self._gateway_id}?umsys=si"
         payload = {
-            "useCache": True,
+            "useCache": use_cache,
             "zone": int(self._zone),
             "filter": {"notEssentials": False, "plant": True, "zone": True, "dhw": True},
             "features": self._features(),
@@ -263,9 +263,9 @@ class RemoconClient:
             )
         return raw
 
-    def get_data(self) -> RemoconData:
+    def get_data(self, use_cache: bool = True) -> RemoconData:
         """Fetch all data and return a RemoconData object."""
-        raw = self._get_raw()
+        raw = self._get_raw(use_cache=use_cache)
         try:
             header = self._get_header()
         except RemoconApiError as err:
