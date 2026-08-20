@@ -74,6 +74,7 @@ class RemoconData:
     desired_temp: float = 0.0
     room_temp: float = 0.0
     zone_mode: int = MODE_AUTOMATIC
+    zone_mode_text: str = "Unknown"
     zone_mode_texts: list[str] = field(default_factory=list)
     heating_active: bool = False
     cooling_active: bool = False
@@ -355,10 +356,13 @@ class RemoconClient:
         plant_mode = int(item_float("PlantMode"))
         plant_options = plant_mode_item.get("options") or []
         plant_texts = plant_mode_item.get("optTexts") or []
-        plant_mode_text = "Unknown"
-        if plant_mode in plant_options:
-            plant_mode_text = str(plant_texts[plant_options.index(plant_mode)])
+        plant_mode_text = RemoconClient._enum_text(
+            plant_mode, plant_options, plant_texts
+        )
         raw_zone_mode = int(item_float("ZoneMode"))
+        zone_mode_text = RemoconClient._enum_text(
+            raw_zone_mode, mode_item.get("options") or [], mode_texts
+        )
         zone_mode = {
             0: MODE_PROTECTION,
             2: MODE_COMFORT,
@@ -383,6 +387,7 @@ class RemoconClient:
             desired_temp=item_float("ZoneDesiredTemp"),
             room_temp=item_float("ZoneMeasuredTemp"),
             zone_mode=zone_mode,
+            zone_mode_text=zone_mode_text,
             zone_mode_texts=zone_mode_texts,
             heating_active=False,
             cooling_active=int(item_float("PlantMode")) == 3,
@@ -418,6 +423,15 @@ class RemoconClient:
     def _item_values(items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
         """Index data items by ID."""
         return {item["id"]: item for item in items if item.get("id")}
+
+    @staticmethod
+    def _enum_text(value: int, options: list[Any], texts: list[Any]) -> str:
+        """Resolve an API enum value using its parallel options/text arrays."""
+        try:
+            index = options.index(value)
+            return str(texts[index])
+        except (ValueError, IndexError):
+            return "Unknown"
 
     @classmethod
     def _raw_item_values(cls, raw: dict[str, Any]) -> dict[str, dict[str, Any]]:

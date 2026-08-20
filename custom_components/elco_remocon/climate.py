@@ -106,6 +106,17 @@ class ElcoClimateEntity(CoordinatorEntity[ElcoRemoconCoordinator], ClimateEntity
         return HVACAction.IDLE
 
     @property
+    def extra_state_attributes(self) -> dict[str, str | int]:
+        """Return the raw and translated operating modes from the API."""
+        data = self.coordinator.data
+        return {
+            "zone_mode": data.zone_mode_text,
+            "zone_mode_value": data.zone_mode,
+            "plant_mode": data.plant_mode_text,
+            "plant_mode_value": data.plant_mode,
+        }
+
+    @property
     def preset_mode(self) -> str | None:
         """Return current preset mode."""
         data = self.coordinator.data
