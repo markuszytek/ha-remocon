@@ -45,8 +45,9 @@ class ElcoRemoconCoordinator(DataUpdateCoordinator[RemoconData]):
         """Return shared Home Assistant device metadata."""
         model = self.data.appliance_model if self.data else None
         gateway_id = self.config_entry.data[CONF_GATEWAY_ID]
+        zone = self.config_entry.data.get(CONF_ZONE, "1")
         return {
-            "identifiers": {(DOMAIN, gateway_id)},
+            "identifiers": {(DOMAIN, f"{gateway_id}_{zone}")},
             "name": model or "Remocon-Net Heat Pump",
             "manufacturer": "Elco",
             "model": model or "Unknown",

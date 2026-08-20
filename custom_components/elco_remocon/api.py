@@ -42,6 +42,12 @@ FEATURES_PAYLOAD = {
     "hasDhwTimeProgTemperatures": 1, "isGSWHCommercialAloneOnBus": False,
 }
 
+AJAX_HEADERS = {
+    "Accept": "application/json, text/javascript, */*; q=0.01",
+    "Ajax-Request": "json",
+    "X-Requested-With": "XMLHttpRequest",
+}
+
 
 class RemoconApiError(Exception):
     """Base exception for API errors."""
@@ -79,7 +85,6 @@ class RemoconData:
     heating_active: bool = False
     cooling_active: bool = False
     heat_or_cool_request: bool = False
-    zone_deroga: float = 0.0
     # Plant
     outside_temp: float = 0.0
     plant_mode: int = 0
@@ -102,8 +107,8 @@ class RemoconData:
     has_room_sensor: bool = False
     plant_address: str | None = None
     appliance_model: str | None = None
-    gateway_online: bool = False
-    gateway_status: str | None = None
+    error_text: str | None = None
+    error_present: bool = False
     quiet_mode_start: str | None = None
     quiet_mode_end: str | None = None
     quiet_mode_active: bool = False
@@ -139,7 +144,10 @@ class RemoconClient:
 
         if resp.status_code in (401, 403):
             raise RemoconAuthError("Invalid credentials")
-        resp.raise_for_status()
+        try:
+            resp.raise_for_status()
+        except requests.HTTPError as err:
+            raise RemoconConnectionError(str(err)) from err
 
         try:
             data = resp.json()
@@ -167,8 +175,9 @@ class RemoconClient:
             resp.raise_for_status()
         except requests.RequestException as err:
             err_msg = str(err)
-            if getattr(err, "response", None) is not None:
-                err_msg += f" - Response: {err.response.text}"
+            response = err.response
+            if response is not None:
+                err_msg += f" - Response: {response.text}"
             _LOGGER.error("API Request failed: %s", err_msg)
             raise RemoconConnectionError(err_msg) from err
         
@@ -182,7 +191,27 @@ class RemoconClient:
         """Return a gateway-specific copy of the web UI feature profile."""
         features = dict(FEATURES_PAYLOAD)
         features["gatewayId"] = self._gateway_id
+        features["zones"] = [{
+            "num": int(self._zone),
+            "name": "",
+            "roomSens": False,
+            "geofenceDeroga": False,
+            "virtInfo": None,
+            "isHidden": False,
+        }]
         return features
+
+    @staticmethod
+    def _as_bool(value: Any) -> bool:
+        """Convert API boolean values, including numeric strings, safely."""
+        if isinstance(value, str):
+            return value.strip().lower() not in {"", "0", "false", "off", "no"}
+        return bool(value)
+
+    def _submit_plant_menu(self, items: list[dict[str, Any]]) -> None:
+        """Submit one or more web UI PlantMenu values."""
+        path = f"/R2/PlantMenu/Submit/{self._gateway_id}?userActivity=SaveOtherSettings"
+        self._request("POST", path, headers=AJAX_HEADERS, json=items)
 
     def _get_raw(self) -> dict:
         path = f"/R2/PlantHome/GetData/{self._gateway_id}?umsys=si"
@@ -192,12 +221,7 @@ class RemoconClient:
             "filter": {"notEssentials": False, "plant": True, "zone": True, "dhw": True},
             "features": self._features(),
         }
-        headers = {
-            "Accept": "application/json, text/javascript, */*; q=0.01",
-            "Ajax-Request": "json",
-            "X-Requested-With": "XMLHttpRequest",
-        }
-        data = self._request("POST", path, headers=headers, json=payload)
+        data = self._request("POST", path, headers=AJAX_HEADERS, json=payload)
         if not data:
             raise RemoconDataError("Empty data received from API")
         if isinstance(data, dict) and not data.get("ok", True):
@@ -261,19 +285,21 @@ class RemoconClient:
             room_temp=float(zone.get("roomTemp", 0)),
             zone_mode=mode_info.get("value", MODE_AUTOMATIC),
             zone_mode_texts=mode_info.get("allowedOptionTexts", []),
-            heating_active=bool(zone.get("isHeatingActive", 0)),
-            cooling_active=bool(zone.get("isCoolingActive", 0)),
-            heat_or_cool_request=bool(zone.get("heatOrCoolRequest", 0)),
+            heating_active=RemoconClient._as_bool(zone.get("isHeatingActive", 0)),
+            cooling_active=RemoconClient._as_bool(zone.get("isCoolingActive", 0)),
+            heat_or_cool_request=RemoconClient._as_bool(
+                zone.get("heatOrCoolRequest", 0)
+            ),
             outside_temp=float(plant.get("outsideTemp", 0)),
             dhw_temp=float(plant.get("dhwStorageTemp", 0)),
             dhw_comfort_temp=float(dhw_comfort.get("value", 0)),
             dhw_reduced_temp=float(dhw_reduced.get("value", 0)),
             dhw_mode=dhw_mode_info.get("value", 0),
-            dhw_enabled=bool(plant.get("dhwEnabled", 0)),
-            heat_pump_on=bool(plant.get("heatPumpOn", 0)),
-            flame_sensor=bool(plant.get("flameSensor", 0)),
+            dhw_enabled=RemoconClient._as_bool(plant.get("dhwEnabled", 0)),
+            heat_pump_on=RemoconClient._as_bool(plant.get("heatPumpOn", 0)),
+            flame_sensor=RemoconClient._as_bool(plant.get("flameSensor", 0)),
             system_pressure=None,
-            has_room_sensor=bool(zone.get("hasRoomSensor", 0)),
+            has_room_sensor=RemoconClient._as_bool(zone.get("hasRoomSensor", 0)),
         )
         data = self._add_header_data(data, header)
         return self._add_advanced_data(data, advanced)
@@ -292,11 +318,7 @@ class RemoconClient:
         response = self._request(
             "POST",
             path,
-            headers={
-                "Accept": "application/json, text/javascript, */*; q=0.01",
-                "Ajax-Request": "json",
-                "X-Requested-With": "XMLHttpRequest",
-            },
+            headers=AJAX_HEADERS,
             json={"features": advanced_features},
         )
         data = response.get("data", {}) if isinstance(response, dict) else {}
@@ -307,8 +329,8 @@ class RemoconClient:
         """Add web UI plant-header data to the common data model."""
         data.plant_address = header.get("plantAddress")
         data.appliance_model = header.get("applianceModel")
-        data.gateway_online = bool(header.get("gwOnline", False))
-        data.gateway_status = header.get("errorText")
+        data.error_text = header.get("errorText")
+        data.error_present = RemoconClient._as_bool(header.get("errorType", 0))
         return data
 
     @staticmethod
@@ -320,7 +342,9 @@ class RemoconClient:
         end = advanced.get("QuietModeEnd", {}).get("value")
         data.quiet_mode_start = RemoconClient._format_time_value(start)
         data.quiet_mode_end = RemoconClient._format_time_value(end)
-        data.quiet_mode_active = bool(advanced.get("IsQuite", {}).get("value", 0))
+        data.quiet_mode_active = RemoconClient._as_bool(
+            advanced.get("IsQuite", {}).get("value", 0)
+        )
         return data
 
     @staticmethod
@@ -392,14 +416,13 @@ class RemoconClient:
             heating_active=False,
             cooling_active=int(item_float("PlantMode")) == 3,
             heat_or_cool_request=False,
-            zone_deroga=item_float("ZoneDeroga"),
             outside_temp=item_float("OutsideTemp"),
             plant_mode=plant_mode,
             plant_mode_text=plant_mode_text,
-            automatic_thermoregulation=bool(
+            automatic_thermoregulation=RemoconClient._as_bool(
                 item_value("AutomaticThermoregulation", 0)
             ),
-            holiday=bool(item_float("Holiday")),
+            holiday=RemoconClient._as_bool(item_value("Holiday", 0)),
             dhw_temp=item_float("DhwStorageTemperature"),
             dhw_target_temp=item_float("DhwTemp"),
             dhw_comfort_temp=item_float("DhwTimeProgComfortTemp"),
@@ -415,7 +438,7 @@ class RemoconClient:
             flow_setpoint_temperature=item_float("ChFlowSetpointTemp")
             if "ChFlowSetpointTemp" in values
             else None,
-            zone_pilot_on=bool(item_value("IsZonePilotOn", 0)),
+            zone_pilot_on=RemoconClient._as_bool(item_value("IsZonePilotOn", 0)),
             has_room_sensor="ZoneMeasuredTemp" in values,
         )
 
@@ -439,84 +462,211 @@ class RemoconClient:
         items = raw.get("items")
         return cls._item_values(items) if isinstance(items, list) else {}
 
-    def set_zone_temperatures(
-        self, comfort: float | None = None, reduced: float | None = None
-    ) -> None:
-        """Set comfort and/or reduced temperature."""
+    def set_dhw_temperature(self, temperature: float) -> None:
+        """Set DHW target temperature using the PlantDhw save contract."""
         raw = self._get_raw()
         items = self._raw_item_values(raw)
-        if not isinstance(raw, dict):
-            raw = {}
-        zone = raw.get("zoneData") or {}
-        ch_comf = zone.get("chComfortTemp") or {}
-        ch_red = zone.get("chReducedTemp") or {}
-        old_comf = float(items.get("ZoneComfortTemp", ch_comf).get("value", 0))
-        old_econ = float(items.get("ZoneEconomyTemp", ch_red).get("value", 0))
-
-        new_comf = comfort if comfort is not None else old_comf
-        new_econ = reduced if reduced is not None else old_econ
-
-        path = (
-            f"/api/v2/remote/bsbZones/{self._gateway_id}"
-            f"/{self._zone}/temperatures?isCooling=false"
+        item_ids = (
+            "DhwTemp",
+            "DhwMode",
+            "DhwStorageTemperature",
+            "IsDhwBoost",
         )
-        self._request("POST", path, json={
-            "new": {"comf": new_comf, "econ": new_econ},
-            "old": {"comf": old_comf, "econ": old_econ},
-        })
+        values = {
+            "DhwTemp": temperature,
+            "DhwMode": items.get("DhwMode", {}).get("value", 0),
+            "DhwStorageTemperature": items.get(
+                "DhwStorageTemperature", {}
+            ).get("value", 0),
+            "IsDhwBoost": items.get("IsDhwBoost", {}).get("value", 0),
+        }
+        prev_items = []
+        for item_id in item_ids:
+            item = dict(items.get(item_id, {}))
+            item.setdefault("gatewayId", self._gateway_id)
+            item.setdefault("zone", 0)
+            item.setdefault("id", item_id)
+            prev_items.append(item)
 
-    def set_zone_mode(self, mode: int) -> None:
-        """Set zone operation mode."""
+        path = f"/R2/PlantDhw/Save/{self._gateway_id}"
+        self._request(
+            "POST",
+            path,
+            headers={
+                "Accept": "application/json, text/javascript, */*; q=0.01",
+                "Ajax-Request": "json",
+                "X-Requested-With": "XMLHttpRequest",
+            },
+            json={
+                "features": self._features(),
+                "requestItems": [
+                    {"itemId": item_id, "value": values[item_id]}
+                    for item_id in item_ids
+                ],
+                "prevDataItems": prev_items,
+            },
+        )
+
+    def set_dhw_comfort_temperature(self, temperature: float) -> None:
+        """Set DHW comfort temperature using the PlantMenu contract."""
         raw = self._get_raw()
         items = self._raw_item_values(raw)
-        if not isinstance(raw, dict):
-            raw = {}
-        zone = raw.get("zoneData") or {}
-        mode_info = zone.get("mode") or {}
-        old_mode = mode_info.get("value", MODE_AUTOMATIC)
-        if "ZoneMode" in items:
-            raw_mode = int(items["ZoneMode"].get("value", 3))
-            old_mode = {0: MODE_PROTECTION, 2: MODE_COMFORT, 3: MODE_AUTOMATIC}.get(
-                raw_mode, MODE_AUTOMATIC
-            )
-
-        path = (
-            f"/api/v2/remote/bsbZones/{self._gateway_id}"
-            f"/{self._zone}/mode?isCooling=false"
+        comfort = items.get("DhwTimeProgComfortTemp", {}).get("value", 0)
+        economy = items.get("DhwTimeProgEconomyTemp", {}).get("value", 0)
+        path = f"/R2/PlantMenu/Submit/{self._gateway_id}?userActivity=SaveOtherSettings"
+        self._request(
+            "POST",
+            path,
+            headers={
+                "Accept": "application/json, text/javascript, */*; q=0.01",
+                "Ajax-Request": "json",
+                "X-Requested-With": "XMLHttpRequest",
+            },
+            json=[
+                {"id": "U6_9_1_0_0", "value": temperature, "prevValue": comfort},
+                {"id": "U6_9_1_0_1", "value": economy, "prevValue": economy},
+            ],
         )
-        self._request("POST", path, json={"new": mode, "old": old_mode})
 
-    def set_dhw_temperature(
-        self, comfort: float | None = None, reduced: float | None = None
-    ) -> None:
-        """Set DHW temperatures."""
+    def set_dhw_economy_temperature(self, temperature: float) -> None:
+        """Set DHW economy temperature using the PlantMenu contract."""
         raw = self._get_raw()
         items = self._raw_item_values(raw)
-        if not isinstance(raw, dict):
-            raw = {}
-        plant = raw.get("plantData") or {}
-        dhw_comf = plant.get("dhwComfortTemp") or {}
-        dhw_red = plant.get("dhwReducedTemp") or {}
-        old_comf = float(
-            items.get("DhwTimeProgComfortTemp", dhw_comf).get("value", 0)
+        comfort = items.get("DhwTimeProgComfortTemp", {}).get("value", 0)
+        economy = items.get("DhwTimeProgEconomyTemp", {}).get("value", 0)
+        path = f"/R2/PlantMenu/Submit/{self._gateway_id}?userActivity=SaveOtherSettings"
+        self._request(
+            "POST",
+            path,
+            headers={
+                "Accept": "application/json, text/javascript, */*; q=0.01",
+                "Ajax-Request": "json",
+                "X-Requested-With": "XMLHttpRequest",
+            },
+            json=[
+                {"id": "U6_9_1_0_0", "value": comfort, "prevValue": comfort},
+                {
+                    "id": "U6_9_1_0_1",
+                    "value": temperature,
+                    "prevValue": economy,
+                },
+            ],
         )
-        old_econ = float(
-            items.get("DhwTimeProgEconomyTemp", dhw_red).get("value", 0)
-        )
-
-        new_comf = comfort if comfort is not None else old_comf
-        new_econ = reduced if reduced is not None else old_econ
-
-        path = f"/api/v2/remote/bsbPlantData/{self._gateway_id}/dhwTemp"
-        self._request("POST", path, json={
-            "new": {"comf": new_comf, "econ": new_econ},
-            "old": {"comf": old_comf, "econ": old_econ},
-        })
 
     def set_dhw_mode(self, mode: int) -> None:
-        """Set DHW mode: 0=off, 1=on."""
-        path = f"/api/v2/remote/bsbPlantData/{self._gateway_id}/dhwMode"
-        self._request("POST", path, json={"new": mode})
+        """Set DHW mode using the PlantDhw save contract."""
+        raw = self._get_raw()
+        items = self._raw_item_values(raw)
+        item_ids = (
+            "DhwTemp",
+            "DhwMode",
+            "DhwStorageTemperature",
+            "IsDhwBoost",
+        )
+        values = {
+            "DhwTemp": items.get("DhwTemp", {}).get("value", 0),
+            "DhwMode": mode,
+            "DhwStorageTemperature": items.get(
+                "DhwStorageTemperature", {}
+            ).get("value", 0),
+            "IsDhwBoost": items.get("IsDhwBoost", {}).get("value", 0),
+        }
+        prev_items = []
+        for item_id in item_ids:
+            item = dict(items.get(item_id, {}))
+            item.setdefault("gatewayId", self._gateway_id)
+            item.setdefault("zone", 0)
+            item.setdefault("id", item_id)
+            item["value"] = values[item_id] if item_id != "DhwMode" else items.get(
+                "DhwMode", {}
+            ).get("value", 0)
+            prev_items.append(item)
+
+        path = f"/R2/PlantDhw/Save/{self._gateway_id}"
+        self._request(
+            "POST",
+            path,
+            headers={
+                "Accept": "application/json, text/javascript, */*; q=0.01",
+                "Ajax-Request": "json",
+                "X-Requested-With": "XMLHttpRequest",
+            },
+            json={
+                "features": self._features(),
+                "requestItems": [
+                    {"itemId": item_id, "value": values[item_id]}
+                    for item_id in item_ids
+                ],
+                "prevDataItems": prev_items,
+            },
+        )
+
+    def set_plant_mode(self, mode: int) -> None:
+        """Set plant operation mode using the PlantMenu contract."""
+        raw = self._get_raw()
+        items = self._raw_item_values(raw)
+        old_mode = int(items.get("PlantMode", {}).get("value", 0))
+        self._submit_plant_menu(
+            [{"id": "U3", "value": str(mode), "prevValue": old_mode}]
+        )
+
+    def set_zone_mode_value(self, mode: int) -> None:
+        """Set the raw zone operation mode using the PlantMenu contract."""
+        items = self._raw_item_values(self._get_raw())
+        old_mode = int(items.get("ZoneMode", {}).get("value", 0))
+        self._submit_plant_menu(
+            [{"id": "U0_0", "value": str(mode), "prevValue": old_mode}]
+        )
+
+    def set_zone_comfort_temperature(self, temperature: float) -> None:
+        """Set zone comfort temperature using the PlantMenu contract."""
+        items = self._raw_item_values(self._get_raw())
+        old_value = items.get("ZoneComfortTemp", {}).get("value", 0)
+        self._submit_plant_menu([{
+            "id": "U6_3_1_0_0",
+            "value": temperature,
+            "prevValue": old_value,
+        }])
+
+    def set_zone_economy_temperature(self, temperature: float) -> None:
+        """Set zone economy temperature using the PlantMenu contract."""
+        items = self._raw_item_values(self._get_raw())
+        old_value = items.get("ZoneEconomyTemp", {}).get("value", 0)
+        self._submit_plant_menu([{
+            "id": "U6_3_1_0_1",
+            "value": temperature,
+            "prevValue": old_value,
+        }])
+
+    def set_zone_cooling_comfort_temperature(self, temperature: float) -> None:
+        """Set zone cooling comfort temperature using PlantMenu."""
+        items = self._raw_item_values(self._get_raw())
+        old_value = items.get("ZoneComfortCoolingTemp", {}).get("value", 0)
+        economy = items.get("ZoneEconomyCoolingTemp", {}).get("value", 0)
+        self._submit_plant_menu([
+            {"id": "U6_6_1_0_0", "value": temperature, "prevValue": old_value},
+            {"id": "U6_6_1_0_2", "value": economy, "prevValue": economy},
+        ])
+
+    def set_zone_cooling_economy_temperature(self, temperature: float) -> None:
+        """Set zone cooling economy temperature using PlantMenu."""
+        items = self._raw_item_values(self._get_raw())
+        comfort = items.get("ZoneComfortCoolingTemp", {}).get("value", 0)
+        old_value = items.get("ZoneEconomyCoolingTemp", {}).get("value", 0)
+        self._submit_plant_menu([
+            {"id": "U6_6_1_0_0", "value": comfort, "prevValue": comfort},
+            {"id": "U6_6_1_0_2", "value": temperature, "prevValue": old_value},
+        ])
+
+    def set_automatic_thermoregulation(self, enabled: bool) -> None:
+        """Set automatic thermoregulation using the PlantMenu contract."""
+        raw = self._get_raw()
+        items = self._raw_item_values(raw)
+        old_value = int(items.get("AutomaticThermoregulation", {}).get("value", 0))
+        value = int(enabled)
+        self._submit_plant_menu(
+            [{"id": "U6_3_3", "value": str(value), "prevValue": old_value}]
+        )
 
     def reauth(self) -> None:
         """Force re-authentication."""

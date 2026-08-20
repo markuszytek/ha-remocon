@@ -52,7 +52,11 @@ class ElcoRemoconConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected exception during setup: %s", err)
                 errors["base"] = "no_data"
             else:
-                await self.async_set_unique_id(user_input[CONF_GATEWAY_ID])
+                unique_id = (
+                    f"{user_input[CONF_GATEWAY_ID]}"
+                    f"_{user_input.get(CONF_ZONE, DEFAULT_ZONE)}"
+                )
+                await self.async_set_unique_id(unique_id)
                 self._abort_if_unique_id_configured()
                 return self.async_create_entry(
                     title=f"Elco {user_input[CONF_GATEWAY_ID]}",
