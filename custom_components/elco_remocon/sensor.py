@@ -34,7 +34,7 @@ class ElcoSensorDescription(SensorEntityDescription):
     state_class: SensorStateClass | None = None
     native_unit_of_measurement: str | None = None
     entity_category: EntityCategory | None = None
-    suggested_display_precision: int = 1
+    suggested_display_precision: int | None = 1
     value_fn: Callable[[RemoconData], StateType]
     exists_fn: Callable[[RemoconData], bool] = lambda _: True
 
@@ -98,6 +98,7 @@ SENSORS: tuple[ElcoSensorDescription, ...] = (
         key="error_text",
         translation_key="error_text",
         entity_category=EntityCategory.DIAGNOSTIC,
+        suggested_display_precision=None,
         value_fn=lambda d: d.error_text,
         exists_fn=lambda d: d.error_text is not None,
     ),
@@ -105,6 +106,7 @@ SENSORS: tuple[ElcoSensorDescription, ...] = (
         key="quiet_mode_start",
         translation_key="quiet_mode_start",
         entity_category=EntityCategory.DIAGNOSTIC,
+        suggested_display_precision=None,
         value_fn=lambda d: d.quiet_mode_start,
         exists_fn=lambda d: d.quiet_mode_start is not None,
     ),
@@ -112,6 +114,7 @@ SENSORS: tuple[ElcoSensorDescription, ...] = (
         key="quiet_mode_end",
         translation_key="quiet_mode_end",
         entity_category=EntityCategory.DIAGNOSTIC,
+        suggested_display_precision=None,
         value_fn=lambda d: d.quiet_mode_end,
         exists_fn=lambda d: d.quiet_mode_end is not None,
     ),
