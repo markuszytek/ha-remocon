@@ -96,6 +96,9 @@
       },
       "quiet_mode_active": {
         "name": "Leisemodus aktiv"
+      },
+      "heat_pump_on": {
+        "name": "Wärmepumpe aktiv"
       }
     }
   }

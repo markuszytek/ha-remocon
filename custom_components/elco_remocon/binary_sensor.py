@@ -47,6 +47,12 @@ BINARY_SENSORS: tuple[ElcoBinarySensorDescription, ...] = (
         translation_key="quiet_mode_active",
         value_fn=lambda d: d.quiet_mode_active,
     ),
+    ElcoBinarySensorDescription(
+        key="heat_pump_on",
+        translation_key="heat_pump_on",
+        device_class=BinarySensorDeviceClass.RUNNING,
+        value_fn=lambda d: d.heat_pump_on,
+    ),
 )
 
 
